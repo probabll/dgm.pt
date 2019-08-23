@@ -3,9 +3,12 @@ from torch.distributions import Distribution
 from dgm import parameterize_conditional
 from dgm.conditional import Conditioner, ConditionalLayer
 
-class LikelihoodLayer(ConditionalLayer):
+class LikelihoodLayer(torch.nn.Module):
     """
-    Likelihood layers add a sampling (in data space) functionality to a ConditionalLayer.
+    Likelihood layers are much like conditional layers, but they are bit more special.
+    The typical likelihood looks like
+        P(x_i|z,x_{<i}
+    so we have two variables `inputs` for `z` and `history` for `x_{<i}`.
     """
     
     def __init__(self, event_size: int, dist_type: type, conditioner: Conditioner):
@@ -15,25 +18,39 @@ class LikelihoodLayer(ConditionalLayer):
         :param conditioner: a NN architecture that maps inputs (conditioning context)
             to parameters of the given distribution
         """
-        super(LikelihoodLayer, self).__init__(event_size, dist_type, conditioner)
+        super(LikelihoodLayer, self).__init__()
+        self.conditioner = conditioner
+        self.dist_type = dist_type
+        self.event_size = event_size
 
-    def sample(self, inputs, **kwargs):
+    def forward(self, inputs, history, **kwargs):
+        pass
+
+    def sample(self, inputs, history, **kwargs):
         pass
 
     
 class FullyFactorizedLikelihood(LikelihoodLayer):
     """
-    Meant for models of the kind P(x|z) = \prod_d P(x_d|z)
-    
-    The argument `inputs` in forward corresponds to z.
+    Meant for models of the kind P(x|z) = \prod_d P(x_d|z) 
     """
     
     def __init__(self, event_size: int, dist_type: type, conditioner: Conditioner):
         super(FullyFactorizedLikelihood, self).__init__(event_size, dist_type, conditioner)
+    
+    def forward(self, inputs, history=None, **kwargs) -> Distribution:
+        """
+        Note that history is ignored.
+        """
+        outputs = self.conditioner(inputs, **kwargs)
+        return parameterize_conditional(self.dist_type, outputs, self.event_size)
         
-    def sample(self, inputs, **kwargs):
+    def sample(self, inputs, history=None, **kwargs):
+        """
+        Note that history is ignored.
+        """
         with torch.no_grad():
-            p = self(inputs)
+            p = self(inputs, **kwargs)
             outputs = p.sample()
             return outputs
         
@@ -49,19 +66,28 @@ class AutoregressiveLikelihood(LikelihoodLayer):
     def __init__(self,
                  event_size: int, dist_type: type, conditioner: Conditioner):
         super(AutoregressiveLikelihood, self).__init__(event_size, dist_type, conditioner)         
+    
+    def forward(self, inputs, history, **kwargs) -> Distribution:
+        """
+        Note that history is required.
+        """
+        if inputs is None:
+            h = history
+        else:
+            h = torch.cat([history, inputs], -1)
+        outputs = self.conditioner(h, **kwargs)
+        return parameterize_conditional(self.dist_type, outputs, self.event_size)
 
-    def sample(self, inputs, outcome, start_from=0):
-        # Make a copy of inputs and outcome so we can edit in-place
+    def sample(self, inputs, history, start_from=0, **kwargs):
+        # Make a copy of inputs and history so we can edit in-place
         inputs = torch.zeros_like(inputs) + inputs
-        outcome = torch.zeros_like(outcome) + outcome
-        # condition on x_{<d}
-        inputs[...,:outcome.size(-1)] = outcome
+        outcome = torch.zeros_like(history) + history
         with torch.no_grad():
             for d in range(start_from, self.event_size): 
                 # parameterize a conditional using x_{<d}
-                p = self(inputs)
+                p = self(inputs, outcome, **kwargs)
                 # sample X_d|x_{<d}
                 outcome[...,d] = p.sample()[...,d]
-            return outcome        
+            return outcome 
         
     

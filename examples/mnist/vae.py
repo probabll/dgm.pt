@@ -40,7 +40,7 @@ class InferenceModel(torch.nn.Module):
         h = torch.cat([x, y], -1) if self.y_size > 0 else x
         return self.conditional_z(h)
    
-    def forward(self, x, y, gen_model, weight_kl, min_kl, step):                
+    def forward(self, x, noisy_x, y, gen_model, weight_kl, min_kl, step):                
         """VAE loss"""
         # Prior
         p_z = gen_model.p_z(x.size(0), x.device)
@@ -49,7 +49,7 @@ class InferenceModel(torch.nn.Module):
         # [B, dz]
         z = q_z.rsample()
         # Likelihood
-        p_x = gen_model.p_x(z, y=y, x=x)
+        p_x = gen_model.p_x(z, y=y, x=noisy_x)
         # [B]
         ll = p_x.log_prob(x).sum(-1)
 
@@ -82,12 +82,9 @@ class GenerativeModel(torch.nn.Module):
         return self.prior_z(batch_size, device)
     
     def p_x(self, z, y=None, x=None) -> Distribution:
-        if isinstance(self.conditional_x, AutoregressiveLikelihood):            
-            context = z if self.y_size == 0 else torch.cat([z, y], -1)            
-            inputs = torch.cat([x, context], -1)
-        else:            
-            inputs = z if self.y_size == 0 else torch.cat([z, y], -1) 
-        return self.conditional_x(inputs)
+        inputs = z if self.y_size == 0 else torch.cat([z, y], -1)            
+        history = x if isinstance(self.conditional_x, AutoregressiveLikelihood) else None
+        return self.conditional_x(inputs, history)
     
     def forward(self, x, y, inf_model, num_samples):   
         """Estimate likelihood of observation"""
@@ -174,7 +171,6 @@ def config(**kwargs):
 
     # Optimization
     parser.add_argument('--epochs', type=int, default=100)
-    parser.add_argument('--input_dropout', type=float, default=0.)
     parser.add_argument('--patience', type=int, default=10)
     parser.add_argument('--early_stopping', type=int, default=10)
     parser.add_argument('--max_gradient_norm', type=float, default=1.)
@@ -188,6 +184,12 @@ def config(**kwargs):
     parser.add_argument('--inf_z_lr', type=float, default=1e-3)
     parser.add_argument('--inf_z_l2_weight', type=float, default=1e-4)
     parser.add_argument('--inf_z_momentum', type=int, default=0.)
+    
+    # Posterior collapse
+    parser.add_argument('--kl_weight', type=float, default=1.)
+    parser.add_argument('--kl_inc', type=float, default=0.)
+    parser.add_argument('--min_kl', type=float, default=0.)
+    parser.add_argument('--input_dropout', type=float, default=0.)
 
     # Metrics
     parser.add_argument('--ll_samples',
@@ -330,7 +332,7 @@ class Experiment:
                 dist_type=likelihood_type, 
                 conditioner=likelihood_conditioner
             )
-        
+       
         # Create generative model P(z)P(x|z)
         gen_model = GenerativeModel(
             x_size=x_size,
@@ -440,7 +442,8 @@ class Experiment:
             writer = None
 
         step = 1
-        min_kl, weight_kl = 0., 1.
+        min_kl, weight_kl, kl_inc = args.min_kl, args.kl_weight, args.kl_inc
+
         for epoch in range(args.epochs):
 
             iterator = tqdm(self.get_batcher(self.train_loader))
@@ -458,7 +461,8 @@ class Experiment:
                     opt.zero_grad()
  
                 # []
-                loss, loss_dict = inf_model(x_mb, y_mb, gen_model, weight_kl, min_kl, step)                
+                noisy_x = x_mb
+                loss, loss_dict = inf_model(x_mb, noisy_x, y_mb, gen_model, weight_kl, min_kl, step)                
                 loss.backward()
                 if args.max_gradient_norm > 0:
                     torch.nn.utils.clip_grad_norm_(
@@ -471,6 +475,11 @@ class Experiment:
                 # TODO: use writer                
                 iterator.set_postfix(OrderedDict((k, '{:4.2f}'.format(v)) for k, v in loss_dict.items()), refresh=False)
                 step += 1
+
+                # KL annealing
+                weight_kl += kl_inc
+                if weight_kl > 1.:
+                    weight_kl = 1.
 
             val_ll, val_dict = self.validate()
             

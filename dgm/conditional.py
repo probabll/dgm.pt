@@ -16,7 +16,7 @@ class Conditioner(torch.nn.Module):
         self.input_size = input_size
         self.output_size = output_size
         
-    def forward(self, inputs):
+    def forward(self, inputs, **kwargs):
         """
         :param inputs: [..., input_size]
         :return: [..., output_size]
@@ -41,12 +41,12 @@ class ConditionalLayer(torch.nn.Module):
         self.dist_type = dist_type
         self.event_size = event_size
        
-    def forward(self, inputs) -> Distribution:
+    def forward(self, inputs, **kwargs) -> Distribution:
         """
         :param inputs: [..., input_size]
         :return: a parameterized Distribution
         """
-        outputs = self.conditioner(inputs)
+        outputs = self.conditioner(inputs, **kwargs)
         return parameterize_conditional(self.dist_type, outputs, self.event_size)
 
     
@@ -79,7 +79,7 @@ class FFConditioner(Conditioner):
         else:
             self.ctxt_net = None
         
-    def forward(self, inputs):
+    def forward(self, inputs, **kwargs):
         if self.context_size > 0:  # some of the units are considered "context"       
             h, context = torch.split(inputs, self.input_size - self.context_size, -1)
             for t, c in zip(self.net, self.ctxt_net):
@@ -96,19 +96,19 @@ class Conv2DConditioner(Conditioner):
     Conditions on input shaped as [batch_size, width, height] using 2D convolutions
     """
     
-    def __init__(self, input_size, output_size, context_size, width, height, 
-                 output_channels, last_kernel_size):   
+    def __init__(self, input_size, output_size, width, height, 
+                 output_channels, last_kernel_size, context_size=0):   
         """
         :param input_size: number of units in the input 
         :param output_size: number of outputs         
-        :param context_size: (optional) number of inputs to be given special treatment
-            these are always assumed to be the rightmost units
         :param width: for 2D convolutions we shape the inputs to [batch_size, width, height]
             (context units are not conditioned on via convolutions)
         :param height: for 2D convolutions we shape the inputs to [batch_size, width, height]
             (context units are not conditioned on via convolutions)
         :param output_channels: 
         :param last_kernel_size:
+        :param context_size: (optional) number of inputs to be given special treatment
+            these are always assumed to be the rightmost units
         """
         super(Conv2DConditioner, self).__init__(input_size, output_size)
         input_channels = (input_size - context_size) // (width * height)
@@ -154,16 +154,16 @@ class TransposedConv2DConditioner(Conditioner):
     Paramaterises models of the kind P(x|z) = \prod_d P(x_d|z)    
     """
     
-    def __init__(self, input_size: int, output_size: int, context_size: int, 
-                 input_channels: int, output_channels: int, last_kernel_size: int):
+    def __init__(self, input_size: int, output_size: int, 
+                 input_channels: int, output_channels: int, last_kernel_size: int, context_size=0):
         """
         :param input_size: number of units in the input 
         :param output_size: number of outputs         
-        :param context_size: (optional) number of inputs to be given special treatment
-            these are always assumed to be the rightmost units
         :param input_channels: 
         :param output_channels:
         :param last_kernel_size:
+        :param context_size: (optional) number of inputs to be given special treatment
+            these are always assumed to be the rightmost units
         """
         super(TransposedConv2DConditioner, self).__init__(input_size, output_size)
         
@@ -187,7 +187,7 @@ class TransposedConv2DConditioner(Conditioner):
         self.context_size = context_size
         self.output_layer = torch.nn.Conv2d(input_channels, output_channels, 1, 1, 0)
         
-    def forward(self, inputs):
+    def forward(self, inputs, **kwargs):
         h = self.input_layer(inputs)
         h = h.reshape(h.size(0), self.input_size - self.context_size, 1, 1)
         h = self.cnn(h)
@@ -199,18 +199,18 @@ class MADEConditioner(Conditioner):
     Wraps around MADE to have a nicer interface for a model.
     """
     
-    def __init__(self, input_size: int, output_size: int, context_size: int,
+    def __init__(self, input_size: int, output_size: int, 
                  hidden_sizes: list, hidden_activation=torch.nn.ReLU(), 
-                 num_masks=1):
+                 num_masks=1, context_size=0):
         """
         :param input_size: number of inputs to the conditioner
         :param output_size: number of outputs 
-        :param context_size: number of (rightmost) input units assumed to be context 
-            (context units are conditioned on without restriction)            
         :param hidden_sizes: dimensionality of each hidden layer in the MADE
         :param hidden_activation: activation for hidden layers in the MADE
         :param num_masks: use more than 1 to sample a number of random orderings
             1 implies the natural order        
+        :param context_size: number of (rightmost) input units assumed to be context 
+            (context units are conditioned on without restriction)            
         """
         super(MADEConditioner, self).__init__(input_size, output_size)
         self._made = MADE(
@@ -224,7 +224,7 @@ class MADEConditioner(Conditioner):
         )
         self.context_size = context_size
     
-    def forward(self, inputs, num_samples=1, resample_mask=False):
+    def forward(self, inputs, num_samples=1, resample_mask=False, **kwargs):
         """
         :param x: data [..., input_dim]
         :param context: [..., context_size] or None
@@ -243,7 +243,7 @@ class MADEConditioner(Conditioner):
         if num_samples > 1:
             self._made.update_masks() 
             for s in range(num_samples - 1):                
-                outputs += self._made(x, context=context)
+                outputs += self._made(inputs, context=context)
                 self._made.update_masks()                
             outputs = outputs / num_samples
         elif resample_mask:
