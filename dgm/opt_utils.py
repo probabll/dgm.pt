@@ -5,22 +5,20 @@ from functools import partial
 from itertools import tee
 
 
-def save_model(models: dict, optimizers: dict, args):
+def save_model(models: dict, optimizers: dict, output_dir: str):
     def f():
-        print('Saving model..')
         to_save = dict()
         for k, v in models.items():
             to_save['models.%s' % k] = v.state_dict()
         for k, v in optimizers.items():
             to_save['optimizers.%s' % k] = v.state_dict()
-        torch.save(to_save, args.output_dir/'checkpoint.pt')
+        torch.save(to_save, '%s/checkpoint.pt' % output_dir)
     return f
 
 
-def load_model(models: dict, optimizers: dict, args):
+def load_model(models: dict, optimizers: dict, output_dir: str):
     def f():
-        print('Loading model..')
-        checkpoint = torch.load(args.output_dir/'checkpoint.pt')
+        checkpoint = torch.load('%s/checkpoint.pt' % output_dir)
         for k, v in models.items():
             v.load_state_dict(checkpoint['models.%s' % k])
         for k, v in optimizers.items():

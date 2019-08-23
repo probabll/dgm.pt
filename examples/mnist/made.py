@@ -1,3 +1,4 @@
+import sys
 import argparse
 import pprint
 import pathlib
@@ -66,6 +67,10 @@ def config(**kwargs):
     parser.add_argument('--logdir', type=str, default=None,
         help='Tensorboard logdir')
     parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--validate', default=False, action="store_true",
+        help="Validate a trained model (skip training)")
+    parser.add_argument('--test', default=False, action="store_true",
+        help="Test a trained model (skip training)")
 
     args, _ = parser.parse_known_args()
     # overwrites
@@ -75,21 +80,12 @@ def config(**kwargs):
     # Save hyperparameters
     output_dir = pathlib.Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)        
-    with open(output_dir/"hparams", "w") as f:
-        json.dump(args.__dict__, f, sort_keys=True, indent=4)    
-    
-    # Output dir
-    args.output_dir = output_dir
     
     # Log dir
     if args.logdir:
         args.logdir = pathlib.Path(args.logdir)
         args.logdir.mkdir(parents=True, exist_ok=True)    
 
-    # CPU/CUDA device
-    args.device = torch.device(args.device) 
-    args.device
-    
     # reproducibility is good
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -104,20 +100,18 @@ def config_from_file(filename):
     return config(**hparams)
 
 
-def save_model(model, optimizer, args):
+def save_model(model, optimizer, output_dir):
     def f():
-        print('Saving model..')
         torch.save({
             'model': model.state_dict(),
             'opt': optimizer.state_dict(),
-        }, args.output_dir/'checkpoint.pt')
+        }, '%s/checkpoint.pt' % output_dir)
     return f
 
 
-def load_model(model, optimizer, args):
+def load_model(model, optimizer, output_dir):
     def f():
-        print('Loading model..')
-        checkpoint = torch.load(args.output_dir/'checkpoint.pt')
+        checkpoint = torch.load('%s/checkpoint.pt' % output_dir)
         model.load_state_dict(checkpoint['model'])
         optimizer.load_state_dict(checkpoint['opt'])
     return f
@@ -165,8 +159,8 @@ def validate(batcher: Batcher, args, model,
         stop = False
         if scheduler is not None:
             stop = scheduler.step(return_dict['NLL'],
-                    callback_best=save_model(model, optimizer, args),
-                    callback_reduce=load_model(model, optimizer, args))
+                    callback_best=save_model(model, optimizer, args.output_dir),
+                    callback_reduce=load_model(model, optimizer, args.output_dir))
                 
         return stop, return_dict        
 
@@ -183,25 +177,27 @@ class Experiment:
     
     def __init__(self, args):
         
-        print("\n# Hyperparameters")
-        pprint.pprint(args.__dict__)
+        print("\n# Hyperparameters", file=sys.stderr)
+        pprint.pprint(args.__dict__, stream=sys.stderr)
 
-        print("\n# Data")
-        print(" - MNIST")    
-        print(" - digit_dim=%d*%d" % (args.height, args.width))
-        print(" - data_dim=%d*%d" % (args.height, args.width))
+        print("\n# Data", file=sys.stderr)
+        print(" - MNIST", file=sys.stderr)    
+        print(" - digit_dim=%d*%d" % (args.height, args.width), file=sys.stderr)
+        print(" - data_dim=%d*%d" % (args.height, args.width), file=sys.stderr)
         train_loader, valid_loader, test_loader = load_mnist(
             args.batch_size, 
             save_to='{}/std/{}x{}'.format(args.data_dir, args.height, args.width),
             height=args.height, 
             width=args.width)
 
-        print("\n# Generative model")
-        print(" - binary outputs:", args.binarize)
-        print(" - distribution:", args.distribution)
-        print(" - conditional:", args.conditional)        
+        print("\n# Generative model", file=sys.stderr)
+        print(" - binary outputs:", args.binarize, file=sys.stderr)
+        print(" - distribution:", args.distribution, file=sys.stderr)
+        print(" - conditional:", args.conditional, file=sys.stderr)        
         x_size = args.width * args.height
         y_size = 10 if args.conditional else 0
+        # CPU/CUDA device
+        device = torch.device(args.device) 
         if args.distribution == 'bernoulli':
             if not args.binarize:
                 raise ValueError("--distribution bernoulli requires --binarize True")
@@ -216,14 +212,14 @@ class Experiment:
                 event_size=x_size,
                 dist_type=Bernoulli, 
                 conditioner=made
-            ).to(args.device)
+            ).to(device)
         else:
             raise ValueError("I do not know this likelihood: %s" % args.distribution)
 
-        print("\n# Architecture")
-        print(model)
+        print("\n# Architecture", file=sys.stderr)
+        print(model, file=sys.stderr)
 
-        print("\n# Optimizer")
+        print("\n# Optimizer", file=sys.stderr)
         gen_opt = get_optimizer(args.gen_opt, model.parameters(), args.gen_lr, args.gen_l2_weight, args.gen_momentum)
         gen_scheduler = ReduceLROnPlateau(
             gen_opt, 
@@ -231,7 +227,7 @@ class Experiment:
             patience=args.patience,
             early_stopping=args.early_stopping,
             mode='min', threshold_mode='abs')
-        print(gen_opt)
+        print(gen_opt, file=sys.stderr)
         
         self.train_loader = train_loader
         self.valid_loader = valid_loader
@@ -246,7 +242,7 @@ class Experiment:
             data_loader, 
             height=self.args.height, 
             width=self.args.width, 
-            device=self.args.device, 
+            device=torch.device(self.args.device), 
             binarize=self.args.binarize, 
             num_classes=10,
             onehot=True
@@ -254,10 +250,16 @@ class Experiment:
         return batcher
     
     def load(self):
-        load_model(self.model, self.gen_opt, self.args)()
+        load_model(self.model, self.gen_opt, self.args.output_dir)()
+    
+    def save_config(self):
+        with open("%s/hparams" % self.args.output_dir, "w") as f:
+            json.dump(self.args.__dict__, f, sort_keys=True, indent=4)
         
     def train(self):
-        print("\n# Training")
+        
+        self.save_config()
+        print("\n# Training", file=sys.stderr)
         args = self.args
         model, gen_opt, gen_scheduler = self.model, self.gen_opt, self.gen_scheduler
 
@@ -326,6 +328,12 @@ class Experiment:
 
             print('Epoch {:3}/{} -- '.format(epoch + 1, args.epochs) + \
                   ', '.join(['{}: {:4.2f}'.format(k, v) for k, v in sorted(dict_valid.items())]))
+        
+        print("Loading best model...")
+        self.load()
+        print("Validation results")
+        val_dict = self.validate()
+        print('dev', ' '.join(['{}={:4.2f}'.format(k, v) for k, v in sorted(val_dict.items())]))
 
     def validate(self):
         """Check validation performance (note this will not update the learning rate scheduler"""
@@ -348,5 +356,23 @@ class Experiment:
         return dict_test    
    
     
+def main():
+    args = config()
+    if args.validate or args.test:
+        print("Loading %s/hparams" % args.output_dir, file=sys.stderr)
+        trained_args = config_from_file('%s/hparams' % args.output_dir)
+        exp = Experiment(trained_args)
+        print("Loading model...", file=sys.stderr)
+        exp.load()
+        if args.validate:
+            val_dict = exp.validate()
+            print('dev', ' '.join(['{}={:4.2f}'.format(k, v) for k, v in sorted(val_dict.items())]))
+        if args.test:
+            test_dict = exp.test()
+            print('test', ' '.join(['{}={:4.2f}'.format(k, v) for k, v in sorted(test_dict.items())]))
+    else:
+        exp = Experiment(args)
+        exp.train()
+
 if __name__ == '__main__':
-    Experiment(config()).train()
+    main()
