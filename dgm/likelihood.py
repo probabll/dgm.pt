@@ -45,14 +45,19 @@ class FullyFactorizedLikelihood(LikelihoodLayer):
         outputs = self.conditioner(inputs, **kwargs)
         return parameterize_conditional(self.dist_type, outputs, self.event_size)
         
-    def sample(self, inputs, history=None, **kwargs):
+    def sample(self, inputs, history=None, start_from=0, **kwargs):
         """
         Note that history is ignored.
         """
         with torch.no_grad():
             p = self(inputs, **kwargs)
             outputs = p.sample()
-            return outputs
+
+        # replace the initial inputs if necessary
+        if start_from > 0 and history is not None:
+            outputs[...,:start_from] = history[...,:start_from]
+
+        return outputs
         
 
 class AutoregressiveLikelihood(LikelihoodLayer):
@@ -80,7 +85,6 @@ class AutoregressiveLikelihood(LikelihoodLayer):
 
     def sample(self, inputs, history, start_from=0, **kwargs):
         # Make a copy of inputs and history so we can edit in-place
-        inputs = torch.zeros_like(inputs) + inputs
         outcome = torch.zeros_like(history) + history
         with torch.no_grad():
             for d in range(start_from, self.event_size): 
