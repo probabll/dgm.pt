@@ -133,7 +133,7 @@ def parameterize_prior(type_p, batch_shape, event_shape, params: list, device, d
         fun = _dispatch_prior(type_p)
         _PRIOR_MEMOIZE[type_p] = fun
     if fun is NotImplemented:
-        raise NotImplementedError
+        raise NotImplementedError("I cannot find a parameterization for a prior of type %s" % type_p )
     if isinstance(batch_shape, int):
         batch_shape = [batch_shape]
     if isinstance(event_shape, int):
@@ -163,7 +163,7 @@ def parameterize_conditional(type_p, inputs, event_size) -> Distribution:
         fun = _dispatch_conditional(type_p)
         _CONDITIONAL_MEMOIZE[type_p] = fun
     if fun is NotImplemented:
-        raise NotImplementedError("No parameterization for %s" % type_p)
+        raise NotImplementedError("I cannot find a parameterization for a conditional of type %s" % type_p )
     return fun(inputs, event_size)
                 
 
