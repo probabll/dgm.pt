@@ -402,7 +402,6 @@ class RNNLMConditioner(Conditioner):
         # x = [B, L], z = [B, Z]
         # Initial hidden state from z
         if h0 is None:
-            print('H0')
             h0 = torch.tanh(self.fc_h0(z))
             h0 = h0.expand((self.num_layers, *h0.shape))
             if self.rnn_type == torch.nn.LSTM:
