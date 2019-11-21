@@ -44,3 +44,13 @@ p_x_given_z = FullyFactorizedLikelihood(
     )            
 )
 ```
+
+
+
+# Design
+
+* Bijection: an invertible transformation (which also computes log det jacobian)
+* Conditioner: maps from data to D-dimensional output
+* ConditionalLayer: parameterises a certain distribution (using a conditioner)
+* LikelihoodLayer: parameterises a certain distribution (using a conditioner) and also provides a dedicated sampling procedure
+* NF: a type of distribution

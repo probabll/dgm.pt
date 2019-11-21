@@ -8,13 +8,30 @@ import json
 from tqdm import tqdm
 from collections import OrderedDict, defaultdict
 
-from torch.distributions import Bernoulli
+from torch.distributions import Bernoulli, Distribution, Normal
 
 import dgm
+from dgm import parameterize_conditional
 from dgm.conditioners import MADEConditioner
 from dgm.likelihood import FullyFactorizedLikelihood, AutoregressiveLikelihood
 from dgm.opt_utils import get_optimizer, ReduceLROnPlateau
+from dgm.bijectors import KingmaGating
+from dgm.nfs import NF
 from utils import load_mnist, Batcher
+
+
+import torch.nn as nn
+
+class MAFConditional(nn.Module):
+
+    def __init__(self, data_size, bijector):
+        super().__init__()
+        self.data_size = data_size
+        self.bijector = bijector
+
+    def forward(self, x, context=None, **kwargs) -> Distribution:
+        base = Normal(torch.zeros_like(x), torch.ones_like(x))
+        return parameterize_conditional(NF, {'base': base, 'bijector': self.bijector, 'context': context}, self.data_size)
 
 
 def config(**kwargs):
@@ -141,11 +158,12 @@ def validate(batcher: Batcher, args, model,
             # [B, 10]
             made_inputs = x_mb if not args.conditional else torch.cat([x_mb, y_mb.float()], -1)
             # [B, H*W]
-            p_x = model(
-                inputs=y_mb.float() if args.conditional else None, 
-                history=x_mb, 
-                num_samples=num_samples, resample_mask=resample_mask
-            )
+            p_x = model(x_mb, context=y_mb.float() if args.conditional else None)
+            #p_x = model(
+            #    inputs=y_mb.float() if args.conditional else None, 
+            #    history=x_mb, 
+            #    num_samples=num_samples, resample_mask=resample_mask
+            #)
             # [B]            
             nll = -p_x.log_prob(x_mb).sum(-1)
             # accumulate metrics
@@ -201,18 +219,15 @@ class Experiment:
         if args.distribution == 'bernoulli':
             if not args.binarize:
                 raise ValueError("--distribution bernoulli requires --binarize True")
-            made = MADEConditioner(
-                input_size=x_size + y_size, 
-                output_size=x_size * 1, 
+
+            bijector = KingmaGating(
+                units=x_size,
                 context_size=y_size,
-                hidden_sizes=args.hidden_sizes,
-                num_masks=args.num_masks
-            )       
-            model = AutoregressiveLikelihood(
-                event_size=x_size,
-                dist_type=Bernoulli, 
-                conditioner=made
-            ).to(device)
+                dropout=0.0,
+                forget_bias=0.0,
+                flip=False
+            )
+            model = MAFConditional(x_size, bijector).to(device)
         else:
             raise ValueError("I do not know this likelihood: %s" % args.distribution)
 
@@ -292,11 +307,12 @@ class Experiment:
                 noisy_x = torch.where(
                     torch.rand_like(x_mb) > args.input_dropout, x_mb, torch.zeros_like(x_mb)
                 )
-                p_x = model(
-                    inputs=context,
-                    history=noisy_x,
-                    resample_mask=resample_mask
-                )
+                p_x = model(noisy_x, context=context)
+                #p_x = model(
+                #    inputs=context,
+                #    history=noisy_x,
+                #    resample_mask=resample_mask
+                #)
                 # [B, H*W]
                 ll_mb = p_x.log_prob(x_mb)
                 # [B]

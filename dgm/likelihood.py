@@ -1,7 +1,9 @@
 import torch
 from torch.distributions import Distribution
 from dgm import parameterize_conditional
-from dgm.conditional import Conditioner, ConditionalLayer
+from dgm.conditioners import Conditioner
+from dgm.conditional import ConditionalLayer
+
 
 class LikelihoodLayer(torch.nn.Module):
     """
