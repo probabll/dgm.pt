@@ -408,6 +408,8 @@ class RNNLMConditioner(Conditioner):
                 # If lstm, split to hidden and cell state
                 h0 = torch.chunk(h0, 2, dim=-1)
                 h0 = tuple([t.contiguous() for t in h0])
+            else:
+                h0 = h0.contiguous()
 
         # Embedding
         if self.p_word_dropout:
