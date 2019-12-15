@@ -90,7 +90,7 @@ class MADEConditioner(Conditioner):
         :return: [..., output_dim]
         """
         if self.context_size > 0:            
-            inputs, context = torch.split(inputs, self.input_size - self.context_size, -1)
+            inputs, context = torch.split(inputs, [self.input_size - self.context_size, self.context_size], -1)
         else:
             context = None            
         # [B, O]                

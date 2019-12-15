@@ -145,3 +145,55 @@ class KingmaGating(Bijection):
             inputs = inputs[:, self.flip_ids]
         return inputs, log_det_jac
 
+
+from dgm.conditioners import MADEConditioner
+
+class KingmaGating2(Bijection):
+    """
+    Autoregressive linear transformation
+        y = u(x) (1 - s(x)) + s(x) * x
+    where u(x) and s(x) are AutoregressiveLinear (with masked diagonals).
+    * u(x) is linear activated
+    * s(x) is sigmoid-activated
+    Thus outputs are in R^D.
+    """
+
+    def __init__(self, units, context_size, hidden_sizes: list, hidden_activation=nn.ELU, flip=False, forget_bias=0.0):
+        super().__init__()
+        self.units = units
+        self.context_size = context_size
+        self.flip = flip
+        self.flip_ids = torch.arange(units - 1, -1, -1).long()
+        self.made = MADEConditioner(input_size=units + context_size, output_size=units * 2,
+            hidden_sizes=hidden_sizes, 
+            context_size=context_size, num_masks=1)
+        self.forget_bias = forget_bias
+
+    def predict_parameters(self, inputs):
+        outputs = self.made(inputs)
+        loc, gate = torch.split(outputs, self.units, dim=-1)
+        gate = torch.sigmoid(gate + self.forget_bias)
+        return loc, gate
+
+    def forward(self, inputs, context=None):
+        # this part conditions on x_{<=d}
+        # [..., D]
+        if self.flip:
+            inputs = inputs[:, self.flip_ids]  # TODO: double check this
+        if self.context_size > 0:
+            inputs = torch.cat([inputs, context], dim=-1)
+        loc, gate = self.predict_parameters(inputs)
+        return gate * inputs + (1 - gate) * loc, torch.log(gate + EPS)
+
+    def inverse(self, outputs, context=None):
+        # [..., D]
+        inputs = torch.zeros_like(outputs)
+        log_det_jac = 0.
+        for d in range(1, self.units + 1):
+            loc, gate = self.predict_parameters(torch.cat([inputs, context], dim=-1) if self.context_size > 0 else inputs)
+            inputs = ((outputs - (1 - gate) * loc) / gate).tril(d - 1)
+            log_det_jac = - torch.log(gate + EPS)
+        if self.flip:  # TODO: double check this
+            inputs = inputs[:, self.flip_ids]
+        return inputs, log_det_jac
+

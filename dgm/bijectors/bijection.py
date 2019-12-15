@@ -52,6 +52,25 @@ class SigmoidTransformer(Bijection):
         return inputs, - log_p - log_q
 
 
+class InverseSigmoidTransformer(Bijection):
+    """
+    Maps inputs from R to (0, 1) using a sigmoid.
+    """
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, outputs, context=None):
+        inputs = probs_to_logits(outputs, is_binary=True)  # stable implementation of inverse sigmoid
+        log_p, log_q = - F.softplus(-inputs), - F.softplus(inputs)
+        return inputs, - log_p - log_q
+    
+    def inverse(self, inputs, context=None):
+        log_p, log_q = - F.softplus(-inputs), - F.softplus(inputs)
+        outputs = torch.sigmoid(inputs)
+        return outputs, log_p + log_q
+
+
 class FlipUnits(Bijection):
 
     def __init__(self, units):

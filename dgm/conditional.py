@@ -2,7 +2,7 @@ import torch
 from torch.distributions import Distribution
 
 from dgm import parameterize_conditional
-from dgm.conditioners import Conditioner
+from dgm.conditioners import Conditioner, MADEConditioner
 
         
 class ConditionalLayer(torch.nn.Module):

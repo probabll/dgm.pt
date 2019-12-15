@@ -5,6 +5,24 @@ import torch.utils.data
 from torchvision import datasets, transforms
 
 
+def boolean_argument(string):
+    return str(string).lower() in {"true", "yes", "1"}
+
+
+def list_argument(dtype, separator=","):
+    def constructor(string):
+        return [dtype(x) for x in string.split(separator)]
+    return constructor
+
+def print_digit(matrix):
+    rows = []
+    for i in range(matrix.size(0)):
+        row = ""
+        for j in range(matrix.size(1)):
+            row += "x" if matrix[i,j] >= 0.5 else " "
+        rows.append(row)
+    return "\n".join(rows)
+
 
 def load_mnist(batch_size, save_to, height=28, width=28):
     """

@@ -8,13 +8,16 @@ import json
 from tqdm import tqdm
 from collections import OrderedDict, defaultdict
 
-from torch.distributions import Bernoulli
+from torch.distributions import Bernoulli, Distribution, Normal
 
-import dgm
+from dgm import parameterize_conditional
 from dgm.conditioners import MADEConditioner
 from dgm.likelihood import FullyFactorizedLikelihood, AutoregressiveLikelihood
 from dgm.opt_utils import get_optimizer, ReduceLROnPlateau
-from utils import load_mnist, Batcher
+from utils import boolean_argument, list_argument, load_mnist, Batcher, print_digit
+
+
+import torch.nn as nn
 
 
 def config(**kwargs):
@@ -27,22 +30,21 @@ def config(**kwargs):
         help='Used to specify the data_dim=height*width')
     parser.add_argument('--width', type=int, default=28,
         help='Used to specify the data_dim=height*width')
-    parser.add_argument('--binarize', type=bool, default=True)
+    parser.add_argument('--binarize', type=boolean_argument, default="true")
     parser.add_argument('--batch_size', type=int, default=64)
 
     # Model and Architecture
-    parser.add_argument('--conditional', default=False, action="store_true",
+    parser.add_argument('--conditional', type=boolean_argument, default=False,
         help="Model P(x|y), i.e. P(digit|class).")
     parser.add_argument('--distribution', type=str, default='bernoulli',
         help='Data likelihood',
         choices=['bernoulli']
     )
     parser.add_argument('--num_masks', type=int, default=1, help="Use k > 1 for k random permutation masks.")
-    parser.add_argument('--hidden_sizes', type=int, default=[500, 500])
+    parser.add_argument('--hidden_sizes', type=list_argument(int, ","), default=[500, 500])
     parser.add_argument('--resample_mask_every', type=int, default=20,
         help='Resample mask every so often to make training agnostic to order of variables.'
     )
-
 
     # Optimization
     parser.add_argument('--epochs', type=int, default=100)
@@ -67,9 +69,9 @@ def config(**kwargs):
     parser.add_argument('--logdir', type=str, default=None,
         help='Tensorboard logdir')
     parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--validate', default=False, action="store_true",
+    parser.add_argument('--validate', type=boolean_argument, default=False,
         help="Validate a trained model (skip training)")
-    parser.add_argument('--test', default=False, action="store_true",
+    parser.add_argument('--test', type=boolean_argument, default=False,
         help="Test a trained model (skip training)")
 
     args, _ = parser.parse_known_args()
@@ -314,7 +316,7 @@ class Experiment:
 
                 if writer:            
                     writer.add_scalar('training/LL', ll)
-                    #writer.add_image('training/posterior/sample', z.mean(0).reshape(1,1,-1) * 255)
+                    writer.add_image('training/posterior/sample', z.mean(0).reshape(1,1,-1) * 255)
 
                 iterator.set_postfix(display, refresh=False)
                 step += 1

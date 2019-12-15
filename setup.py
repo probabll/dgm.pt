@@ -7,5 +7,6 @@ setup(name='dgm.pt',
       author_email='w.aziz@uva.nl',
       url='https://github.com/probabll/dgm.pt',
       packages=find_packages(),
+      python_requires='>=3.6',
       include_package_data=True
 )
