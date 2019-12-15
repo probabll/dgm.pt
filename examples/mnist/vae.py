@@ -24,8 +24,8 @@ from utils import load_mnist, Batcher
 from utils import boolean_argument, list_argument
 
 from dgm import register_prior_parameterization, register_conditional_parameterization
-from probabll.distributions import Kumaraswamy
 
+from probabll.distributions import Kumaraswamy
 
 @register_prior_parameterization(Beta)
 def make_beta(batch_shape, event_shape, params, device, dtype):

@@ -2,7 +2,12 @@
 
 Pytorch code for building deep generative models
 
+Install `https://github.com/probabll/dists.pt`
+
+Then
+
 ```bash
+pip install -r requirements.txt
 python setup.py develop
 ```
 
