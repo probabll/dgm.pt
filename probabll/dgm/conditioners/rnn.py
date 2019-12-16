@@ -5,7 +5,7 @@ import torch
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from .conditioner import Conditioner
-from dgm.nn import WordDropout
+from probabll.dgm.nn import WordDropout
 
 
 class RNNConditioner(Conditioner):

@@ -14,16 +14,16 @@ import torch
 from torch.distributions import Distribution, Bernoulli, Normal, Uniform, Beta
 from torch.distributions.kl import kl_divergence
 
-from dgm.prior import PriorLayer
-from dgm.conditional import ConditionalLayer
-from dgm.conditioners import FFConditioner, Conv2DConditioner, TransposedConv2DConditioner, MADEConditioner
-from dgm.likelihood import FullyFactorizedLikelihood, AutoregressiveLikelihood
-from dgm.opt_utils import get_optimizer, ReduceLROnPlateau, load_model, save_model
+from probabll.dgm.prior import PriorLayer
+from probabll.dgm.conditional import ConditionalLayer
+from probabll.dgm.conditioners import FFConditioner, Conv2DConditioner, TransposedConv2DConditioner, MADEConditioner
+from probabll.dgm.likelihood import FullyFactorizedLikelihood, AutoregressiveLikelihood
+from probabll.dgm.opt_utils import get_optimizer, ReduceLROnPlateau, load_model, save_model
 
 from utils import load_mnist, Batcher
 from utils import boolean_argument, list_argument
 
-from dgm import register_prior_parameterization, register_conditional_parameterization
+from probabll.dgm import register_prior_parameterization, register_conditional_parameterization
 
 from probabll.distributions import Kumaraswamy
 

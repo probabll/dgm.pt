@@ -1,8 +1,9 @@
 import torch
 from torch.distributions import Distribution
-from dgm import parameterize_conditional
-from dgm.conditioners import Conditioner
-from dgm.conditional import ConditionalLayer
+import probabll.dgm as dgm
+from probabll.dgm import parameterize_conditional
+from probabll.dgm.conditioners import Conditioner
+from probabll.dgm.conditional import ConditionalLayer
 
 
 class LikelihoodLayer(torch.nn.Module):

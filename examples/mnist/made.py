@@ -10,10 +10,10 @@ from collections import OrderedDict, defaultdict
 
 from torch.distributions import Bernoulli, Distribution, Normal
 
-from dgm import parameterize_conditional
-from dgm.conditioners import MADEConditioner
-from dgm.likelihood import FullyFactorizedLikelihood, AutoregressiveLikelihood
-from dgm.opt_utils import get_optimizer, ReduceLROnPlateau
+from probabll.dgm import parameterize_conditional
+from probabll.dgm.conditioners import MADEConditioner
+from probabll.dgm.likelihood import FullyFactorizedLikelihood, AutoregressiveLikelihood
+from probabll.dgm.opt_utils import get_optimizer, ReduceLROnPlateau
 from utils import boolean_argument, list_argument, load_mnist, Batcher, print_digit
 
 

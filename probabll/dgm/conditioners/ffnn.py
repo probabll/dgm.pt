@@ -4,7 +4,7 @@ Conditioners based on FFNNs
 
 import torch
 
-from dgm.nn import MADE
+from probabll.dgm.nn import MADE
 from .conditioner import Conditioner
 
 

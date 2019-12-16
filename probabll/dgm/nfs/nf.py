@@ -1,9 +1,8 @@
 import torch
 from torch.distributions import Distribution
 from torch.distributions.kl import register_kl
-
-from dgm import register_conditional_parameterization
-from dgm.bijectors import Bijection
+from probabll.dgm import register_conditional_parameterization
+from probabll.dgm.bijectors import Bijection
 
 
 class NF(Distribution):

@@ -3,7 +3,7 @@ Conditioners based on CNNs
 """
 import torch
 
-from dgm.nn import GatedConv2d, GatedConvTranspose2d
+from probabll.dgm.nn import GatedConv2d, GatedConvTranspose2d
 from .conditioner import Conditioner
 
 
