@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 from torch.distributions import Distribution
-from dgm import parameterize_prior
+from probabll.dgm import parameterize_prior
 
     
 class PriorLayer(torch.nn.Module):

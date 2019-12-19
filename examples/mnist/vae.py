@@ -11,17 +11,35 @@ import torch.nn.functional as F
 from itertools import chain
 
 import torch
-from torch.distributions import Distribution, Bernoulli, Normal, Uniform
+from torch.distributions import Distribution, Bernoulli, Normal, Uniform, Beta
 from torch.distributions.kl import kl_divergence
 
-import dgm
-
-from dgm.prior import PriorLayer
-from dgm.conditional import ConditionalLayer, FFConditioner, Conv2DConditioner, TransposedConv2DConditioner, MADEConditioner
-from dgm.likelihood import FullyFactorizedLikelihood, AutoregressiveLikelihood
-from dgm.opt_utils import get_optimizer, ReduceLROnPlateau, load_model, save_model
+from probabll.dgm.prior import PriorLayer
+from probabll.dgm.conditional import ConditionalLayer
+from probabll.dgm.conditioners import FFConditioner, Conv2DConditioner, TransposedConv2DConditioner, MADEConditioner
+from probabll.dgm.likelihood import FullyFactorizedLikelihood, AutoregressiveLikelihood
+from probabll.dgm.opt_utils import get_optimizer, ReduceLROnPlateau, load_model, save_model
 
 from utils import load_mnist, Batcher
+from utils import boolean_argument, list_argument
+
+from probabll.dgm import register_prior_parameterization, register_conditional_parameterization
+
+from probabll.distributions import Kumaraswamy
+
+@register_prior_parameterization(Beta)
+def make_beta(batch_shape, event_shape, params, device, dtype):
+    p = Beta(
+        torch.full(batch_shape + event_shape, params[0], device=device, dtype=dtype),
+        torch.full(batch_shape + event_shape, params[1], device=device, dtype=dtype),
+    )
+    return p
+
+@register_conditional_parameterization(Kumaraswamy)
+def make_kumaraswamy(inputs, event_size):
+    assert inputs.size(-1) == 2 * event_size, "Expected [...,%d] got [...,%d]" % (2 * event_size, inputs.size(-1))
+    params = torch.split(inputs, event_size, -1)
+    return Kumaraswamy(a=torch.clamp(F.softplus(params[0]) + 1e-2, max=10.), b=torch.clamp(F.softplus(params[1]) + 1e-2, max=10.)) 
 
 
 class InferenceModel(torch.nn.Module):    
@@ -40,6 +58,14 @@ class InferenceModel(torch.nn.Module):
     def q_z(self, x, y):        
         h = torch.cat([x, y], -1) if self.y_size > 0 else x
         return self.conditional_z(h)
+
+    def rsample(self, q_z):
+        if isinstance(q_z, NF):
+            base, z, djac = q_z.nf_rsample()
+        else:
+            z = q_z.rsample()
+            base, djac = None, torch.zeros_like(z)
+        return z, djac
    
     def forward(self, x, noisy_x, y, gen_model, weight_kl, min_kl, step):                
         """VAE loss"""
@@ -106,9 +132,10 @@ class GenerativeModel(torch.nn.Module):
             # Likelihood
             p_x = self.p_x(z, y=y, x=x)
             log_conditional_x = p_x.log_prob(x).sum(-1)
+            log_q_z = q_z.log_prob(z).sum(-1)
             ll.append(
                 # [1, B]                
-                (log_conditional_x + p_z.log_prob(z).sum(-1) - q_z.log_prob(z).sum(-1)).unsqueeze(0)
+                (log_conditional_x + p_z.log_prob(z).sum(-1) - log_q_z).unsqueeze(0)
             )
             # [B]
             log_conditional = log_conditional + log_conditional_x
@@ -146,24 +173,24 @@ def config(**kwargs):
         help='Used to specify the data_dim=height*width')
     parser.add_argument('--width', type=int, default=28,
         help='Used to specify the data_dim=height*width')
-    parser.add_argument('--binarize', type=bool, default=True)
+    parser.add_argument('--binarize', type=boolean_argument, default="true")
     parser.add_argument('--batch_size', type=int, default=64)
 
     # Model and Architecture
     parser.add_argument('--latent_size', type=int, default=64,
         help="Dimensionality of latent code Z ~ N(0,I).")
-    parser.add_argument('--conditional', default=False, action="store_true",
+    parser.add_argument('--conditional', default="false", type=boolean_argument,
         help="Model P(x|y) and q(z|x,y)")
     parser.add_argument('--likelihood', type=str, default='bernoulli',
         help='Data likelihood',
         choices=['bernoulli']
     )    
     parser.add_argument('--prior', type=str, default="gaussian",
-        choices=["gaussian"], help="Reserved for future use")
+        choices=["gaussian", "beta"], help="Reserved for future use")
     parser.add_argument('--prior_params', type=str, default="0. 1.")
     parser.add_argument('--posterior', type=str, default="gaussian", 
-        choices=["gaussian"], help="Reserved for future use")
-    parser.add_argument('--hidden_sizes', type=str, default="500 500",
+        choices=["gaussian", "kumaraswamy"], help="Choose the posterior family")
+    parser.add_argument('--hidden_sizes', type=list_argument(int, ","), default=[500, 500],
         help="Decoder's hidden layers.")
     parser.add_argument('--encoder', type=str, default="basic", choices=['basic', 'cnn'],
         help="Choose the encoder architecture.")    
@@ -204,9 +231,9 @@ def config(**kwargs):
     parser.add_argument('--logdir', type=str, default=None,
         help='Tensorboard logdir')
     parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--validate', default=False, action="store_true",
+    parser.add_argument('--validate', default="false", type=boolean_argument,
         help="Validate a trained model (skip training)")
-    parser.add_argument('--test', default=False, action="store_true",
+    parser.add_argument('--test', default="false", type=boolean_argument, 
         help="Test a trained model (skip training)")
 
     args, _ = parser.parse_known_args()
@@ -274,6 +301,20 @@ class Experiment:
         # Configure prior
         if args.prior == 'gaussian':
             prior_type = Normal
+            if len(args.prior_params) != 2:
+                raise ValueError("A Gaussian prior takes two parameters (loc, scale)")
+            if args.prior_params[1] <= 0:
+                raise ValueError("The Gaussian scale must be strictly positive")
+            if args.posterior not in ["gaussian"]:
+                raise ValueError("Pairing a Gaussian prior with a %s posterior is not a good idea" % args.posterior)
+        elif args.prior == 'beta':
+            prior_type = Beta
+            if len(args.prior_params) != 2:
+                raise ValueError("A Beta prior takes two parameters (shape_a, shape_b)")
+            if args.prior_params[0] <= 0 or args.prior_params[1] <= 0:
+                raise ValueError("The Beta shape parameters must be strictly positive")
+            if args.posterior not in ["kumaraswamy"]:
+                raise ValueError("Pairing a Beta prior with a %s posterior is not a good idea" % args.posterior)
         else:
             raise ValueError("Unknown prior: %s" % args.prior)
         p_z = PriorLayer(
@@ -347,35 +388,36 @@ class Experiment:
         if args.posterior == 'gaussian':
             encoder_outputs = z_size * 2
             posterior_type = Normal
+        elif args.posterior == 'kumaraswamy':
+            encoder_outputs = z_size * 2
+            posterior_type = Kumaraswamy
         else:
             raise ValueError("Unknown posterior: %s" % args.posterior)            
-        
+
         if args.encoder == 'basic':
-            q_z = ConditionalLayer(
-                event_size=z_size,
-                dist_type=posterior_type,
-                conditioner=FFConditioner(
-                    input_size=x_size + y_size,
-                    output_size=encoder_outputs, 
-                    hidden_sizes=args.hidden_sizes                
-                )
+            conditioner=FFConditioner(
+                input_size=x_size + y_size,
+                output_size=encoder_outputs, 
+                hidden_sizes=args.hidden_sizes                
             )
         elif args.encoder == 'cnn':            
-            q_z = ConditionalLayer(
-                event_size=z_size,
-                dist_type=posterior_type,
-                conditioner=Conv2DConditioner(
-                    input_size=x_size + y_size,
-                    output_size=encoder_outputs,
-                    context_size=y_size,
-                    width=args.width,
-                    height=args.height,
-                    output_channels=256,
-                    last_kernel_size=7
-                )
+            conditioner=Conv2DConditioner(
+                input_size=x_size + y_size,
+                output_size=encoder_outputs,
+                context_size=y_size,
+                width=args.width,
+                height=args.height,
+                output_channels=256,
+                last_kernel_size=7
             )
         else:
             raise ValueError("Unknown encoder architecture: %s" % args.encoder)
+        
+        q_z = ConditionalLayer(
+            event_size=z_size,
+            dist_type=posterior_type,
+            conditioner=conditioner
+        )
             
         inf_model = InferenceModel(
             x_size=x_size,
