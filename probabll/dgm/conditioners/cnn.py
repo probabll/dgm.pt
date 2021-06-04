@@ -13,7 +13,7 @@ class Conv2DConditioner(Conditioner):
     """
     
     def __init__(self, input_size, output_size, width, height, 
-                 output_channels, last_kernel_size, context_size=0):   
+                 output_channels, last_kernel_size, context_size=0, dropout=0):   
         """
         :param input_size: number of units in the input 
         :param output_size: number of outputs         
@@ -32,10 +32,15 @@ class Conv2DConditioner(Conditioner):
         # TODO: generalise these parameters
         self.cnn = torch.nn.Sequential(
             GatedConv2d(input_channels, 32, kernel_size=5, stride=1, padding=2),
+            torch.nn.Dropout(dropout),
             GatedConv2d(32, 32, kernel_size=5, stride=2, padding=2),
+            torch.nn.Dropout(dropout),
             GatedConv2d(32, 64, kernel_size=5, stride=1, padding=2),
+            torch.nn.Dropout(dropout),
             GatedConv2d(64, 64, kernel_size=5, stride=2, padding=2),
+            torch.nn.Dropout(dropout),
             GatedConv2d(64, 64, kernel_size=5, stride=1, padding=2),
+            torch.nn.Dropout(dropout),
             GatedConv2d(64, output_channels, kernel_size=last_kernel_size, stride=1, padding=0)            
         )           
         if context_size > 0:            
@@ -71,7 +76,7 @@ class TransposedConv2DConditioner(Conditioner):
     """
     
     def __init__(self, input_size: int, output_size: int, 
-                 input_channels: int, output_channels: int, last_kernel_size: int, context_size=0):
+                 input_channels: int, output_channels: int, last_kernel_size: int, context_size=0, dropout=0):
         """
         :param input_size: number of units in the input 
         :param output_size: number of outputs         
@@ -94,10 +99,15 @@ class TransposedConv2DConditioner(Conditioner):
         # TODO: generalise these parameters
         self.cnn = torch.nn.Sequential(
             GatedConvTranspose2d(input_size - context_size, 64, last_kernel_size, 1, 0),
+            torch.nn.Dropout(dropout),
             GatedConvTranspose2d(64, 64, 5, 1, 2),
+            torch.nn.Dropout(dropout),
             GatedConvTranspose2d(64, 32, 5, 2, 2, 1),
+            torch.nn.Dropout(dropout),
             GatedConvTranspose2d(32, 32, 5, 1, 2),
+            torch.nn.Dropout(dropout),
             GatedConvTranspose2d(32, 32, 5, 2, 2, 1),
+            torch.nn.Dropout(dropout),
             GatedConvTranspose2d(32, input_channels, 5, 1, 2)
         )
         self.context_size = context_size
