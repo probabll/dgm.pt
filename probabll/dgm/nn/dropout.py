@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 
+
 class WordDropout(nn.Module):
     """
     Word Dropout, as described in [1].
@@ -9,10 +10,11 @@ class WordDropout(nn.Module):
     [1] Bowman, S. R., Vilnis, L., Vinyals, O., Dai, A. M., Jozefowicz, R., & Bengio, S. (2015).
         Generating sentences from a continuous space.
     """
+
     def __init__(self, p, unk_idx: int, padding_idx: int = 0):
         super(WordDropout, self).__init__()
         if p < 0 or p > 1:
-            raise ValueError('p should be a probability, 0 < p < 1.')
+            raise ValueError("p should be a probability, 0 < p < 1.")
         self.p = p
         self.unk_idx = unk_idx
         self.padding_idx = padding_idx

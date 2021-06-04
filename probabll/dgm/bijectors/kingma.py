@@ -1,13 +1,12 @@
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import math
-
 from .bijection import Bijection
 
-
-EPS=1e-4
+EPS = 1e-4
 
 
 class AutoregressiveLinear(nn.Module):
@@ -34,20 +33,24 @@ class AutoregressiveLinear(nn.Module):
         self.output_size = output_size
         self.input_size = context_size + output_size
         self.diagonal_zeros = diagonal_zeros
-        self._d = 1 if diagonal_zeros else 0  # number of diagonals to exclude (starting from the main)
+        self._d = (
+            1 if diagonal_zeros else 0
+        )  # number of diagonals to exclude (starting from the main)
 
         self.weight = nn.parameter.Parameter(
-            nn.init.kaiming_normal_(
-                torch.Tensor(self.output_size, self.input_size)
-            )
+            nn.init.kaiming_normal_(torch.Tensor(self.output_size, self.input_size))
         )
-        self.bias = torch.nn.Parameter(
-            torch.nn.init.uniform_(
-                torch.Tensor(output_size),
-                -1 / math.sqrt(output_size),
-                1 / math.sqrt(output_size)
+        self.bias = (
+            torch.nn.Parameter(
+                torch.nn.init.uniform_(
+                    torch.Tensor(output_size),
+                    -1 / math.sqrt(output_size),
+                    1 / math.sqrt(output_size),
+                )
             )
-        ) if bias else 0
+            if bias
+            else 0
+        )
 
     def forward(self, inputs, context=None):
         """
@@ -58,7 +61,11 @@ class AutoregressiveLinear(nn.Module):
         if self.context_size == 0:
             return F.linear(inputs, self.weight.tril(-self._d), self.bias)
         else:  # outputs depend freely on the context units
-            return F.linear(torch.cat([context, inputs], dim=-1), self.weight.tril(self.context_size - self._d), self.bias)
+            return F.linear(
+                torch.cat([context, inputs], dim=-1),
+                self.weight.tril(self.context_size - self._d),
+                self.bias,
+            )
 
 
 class KingmaGating(Bijection):
@@ -71,8 +78,15 @@ class KingmaGating(Bijection):
     Thus outputs are in R^D.
     """
 
-    def __init__(self, units, context_size, hidden_activation=nn.ELU,
-            dropout=0., forget_bias=0., flip=False):
+    def __init__(
+        self,
+        units,
+        context_size,
+        hidden_activation=nn.ELU,
+        dropout=0.0,
+        forget_bias=0.0,
+        flip=False,
+    ):
         super().__init__()
         self.units = units
         self.context_size = context_size
@@ -83,7 +97,9 @@ class KingmaGating(Bijection):
         if context_size > 0:
             self.bridge = nn.Sequential(
                 nn.Dropout(dropout),
-                AutoregressiveLinear(units, context_size=context_size, diagonal_zeros=False, bias=True),
+                AutoregressiveLinear(
+                    units, context_size=context_size, diagonal_zeros=False, bias=True
+                ),
                 hidden_activation(),
                 nn.Dropout(dropout),
                 AutoregressiveLinear(units, diagonal_zeros=False, bias=True),
@@ -99,12 +115,10 @@ class KingmaGating(Bijection):
                 hidden_activation(),
             )
         self.loc_layer = nn.Sequential(
-            nn.Dropout(dropout),
-            AutoregressiveLinear(units, diagonal_zeros=True)
+            nn.Dropout(dropout), AutoregressiveLinear(units, diagonal_zeros=True)
         )
         self.gate_layer = nn.Sequential(
-            nn.Dropout(dropout),
-            AutoregressiveLinear(units, diagonal_zeros=True)
+            nn.Dropout(dropout), AutoregressiveLinear(units, diagonal_zeros=True)
         )
         self.forget_bias = forget_bias
 
@@ -126,7 +140,7 @@ class KingmaGating(Bijection):
     def inverse(self, outputs, context=None):
         # [..., D]
         inputs = torch.zeros_like(outputs)
-        log_det_jac = 0.
+        log_det_jac = 0.0
         for d in range(1, self.units + 1):
             # this part conditions on x_{<=d}
             # [..., D]
@@ -139,7 +153,7 @@ class KingmaGating(Bijection):
             loc = self.loc_layer(h)
             gate = torch.sigmoid(self.gate_layer(h) + self.forget_bias)
             inputs = ((outputs - (1 - gate) * loc) / gate).tril(d - 1)
-            log_det_jac = - torch.log(gate + EPS)
+            log_det_jac = -torch.log(gate + EPS)
 
         if self.flip:  # TODO: double check this
             inputs = inputs[:, self.flip_ids]
@@ -147,6 +161,7 @@ class KingmaGating(Bijection):
 
 
 from dgm.conditioners import MADEConditioner
+
 
 class KingmaGating2(Bijection):
     """
@@ -158,15 +173,27 @@ class KingmaGating2(Bijection):
     Thus outputs are in R^D.
     """
 
-    def __init__(self, units, context_size, hidden_sizes: list, hidden_activation=nn.ELU, flip=False, forget_bias=0.0):
+    def __init__(
+        self,
+        units,
+        context_size,
+        hidden_sizes: list,
+        hidden_activation=nn.ELU,
+        flip=False,
+        forget_bias=0.0,
+    ):
         super().__init__()
         self.units = units
         self.context_size = context_size
         self.flip = flip
         self.flip_ids = torch.arange(units - 1, -1, -1).long()
-        self.made = MADEConditioner(input_size=units + context_size, output_size=units * 2,
-            hidden_sizes=hidden_sizes, 
-            context_size=context_size, num_masks=1)
+        self.made = MADEConditioner(
+            input_size=units + context_size,
+            output_size=units * 2,
+            hidden_sizes=hidden_sizes,
+            context_size=context_size,
+            num_masks=1,
+        )
         self.forget_bias = forget_bias
 
     def predict_parameters(self, inputs):
@@ -188,12 +215,15 @@ class KingmaGating2(Bijection):
     def inverse(self, outputs, context=None):
         # [..., D]
         inputs = torch.zeros_like(outputs)
-        log_det_jac = 0.
+        log_det_jac = 0.0
         for d in range(1, self.units + 1):
-            loc, gate = self.predict_parameters(torch.cat([inputs, context], dim=-1) if self.context_size > 0 else inputs)
+            loc, gate = self.predict_parameters(
+                torch.cat([inputs, context], dim=-1)
+                if self.context_size > 0
+                else inputs
+            )
             inputs = ((outputs - (1 - gate) * loc) / gate).tril(d - 1)
-            log_det_jac = - torch.log(gate + EPS)
+            log_det_jac = -torch.log(gate + EPS)
         if self.flip:  # TODO: double check this
             inputs = inputs[:, self.flip_ids]
         return inputs, log_det_jac
-

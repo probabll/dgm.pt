@@ -1,4 +1,4 @@
-from .nf import NF, IAF
+from .nf import IAF, NF
 
 __all__ = [
     "NF",

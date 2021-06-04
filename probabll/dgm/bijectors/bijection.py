@@ -1,9 +1,7 @@
 import torch
 import torch.nn as nn
-
 import torch.nn.functional as F
-from torch.distributions.utils import probs_to_logits, logits_to_probs
-
+from torch.distributions.utils import logits_to_probs, probs_to_logits
 
 EPS = 1e-4
 
@@ -42,14 +40,16 @@ class SigmoidTransformer(Bijection):
         super().__init__()
 
     def forward(self, inputs, context=None):
-        log_p, log_q = - F.softplus(-inputs), - F.softplus(inputs)
+        log_p, log_q = -F.softplus(-inputs), -F.softplus(inputs)
         outputs = torch.sigmoid(inputs)
         return outputs, log_p + log_q
 
     def inverse(self, outputs, context=None):
-        inputs = probs_to_logits(outputs, is_binary=True)  # stable implementation of inverse sigmoid
-        log_p, log_q = - F.softplus(-inputs), - F.softplus(inputs)
-        return inputs, - log_p - log_q
+        inputs = probs_to_logits(
+            outputs, is_binary=True
+        )  # stable implementation of inverse sigmoid
+        log_p, log_q = -F.softplus(-inputs), -F.softplus(inputs)
+        return inputs, -log_p - log_q
 
 
 class InverseSigmoidTransformer(Bijection):
@@ -61,18 +61,19 @@ class InverseSigmoidTransformer(Bijection):
         super().__init__()
 
     def forward(self, outputs, context=None):
-        inputs = probs_to_logits(outputs, is_binary=True)  # stable implementation of inverse sigmoid
-        log_p, log_q = - F.softplus(-inputs), - F.softplus(inputs)
-        return inputs, - log_p - log_q
-    
+        inputs = probs_to_logits(
+            outputs, is_binary=True
+        )  # stable implementation of inverse sigmoid
+        log_p, log_q = -F.softplus(-inputs), -F.softplus(inputs)
+        return inputs, -log_p - log_q
+
     def inverse(self, inputs, context=None):
-        log_p, log_q = - F.softplus(-inputs), - F.softplus(inputs)
+        log_p, log_q = -F.softplus(-inputs), -F.softplus(inputs)
         outputs = torch.sigmoid(inputs)
         return outputs, log_p + log_q
 
 
 class FlipUnits(Bijection):
-
     def __init__(self, units):
         super().__init__()
         self.ids = torch.arange(units - 1, -1, -1).long()
@@ -84,9 +85,7 @@ class FlipUnits(Bijection):
         return outputs[:, self.ids], torch.zeros_like(outputs)
 
 
-
 class StackedBijections(Bijection):
-
     def __init__(self, bijections: list):
         super().__init__()
         self.flows = nn.ModuleList(bijections)
@@ -104,7 +103,7 @@ class StackedBijections(Bijection):
         :return: [..., d_i]
         """
         outputs = data_sample
-        log_det_jac = 0.
+        log_det_jac = 0.0
 
         for flow in self.flows:
             # Conditioner: predicts parameters of linear layer
@@ -120,11 +119,8 @@ class StackedBijections(Bijection):
         :return: [..., d_i]
         """
         outputs = base_sample
-        log_det_jac = 0.
+        log_det_jac = 0.0
         for l, flow in enumerate(reversed(self.flows)):
             outputs, ldj = flow.inverse(outputs, context)
             log_det_jac = log_det_jac + ldj
         return outputs, log_det_jac
-
-
-

@@ -6,16 +6,20 @@ Prior parameterization differs from conditional parameterization in that priors 
 Conditionals are parameterized via a tensor.
 """
 
+from functools import total_ordering
+
 import torch
 import torch.nn.functional as F
-from functools import total_ordering
-from torch.distributions import Distribution, Uniform, Bernoulli, Normal
+from torch.distributions import Bernoulli, Distribution, Normal, Uniform
 
-
-_CONDITIONAL_REGISTRY = {}  # Source of truth mapping a few general (type, type) pairs to functions.
+_CONDITIONAL_REGISTRY = (
+    {}
+)  # Source of truth mapping a few general (type, type) pairs to functions.
 _CONDITIONAL_MEMOIZE = {}
 
-_PRIOR_REGISTRY = {}  # Source of truth mapping a few general (type, type) pairs to functions.
+_PRIOR_REGISTRY = (
+    {}
+)  # Source of truth mapping a few general (type, type) pairs to functions.
 _PRIOR_MEMOIZE = {}
 
 
@@ -31,12 +35,14 @@ def register_prior_parameterization(type_p):
 
     Lookup returns the most specific (type). If
     the match is ambiguous, a `RuntimeWarning` is raised.
-    
+
     Args:
         type_p (type): A subclass of :class:`~torch.distributions.Distribution`.
     """
     if not isinstance(type_p, type) and issubclass(type_p, Distribution):
-        raise TypeError('Expected type_p to be a Distribution subclass but got {}'.format(type_p))
+        raise TypeError(
+            "Expected type_p to be a Distribution subclass but got {}".format(type_p)
+        )
 
     def decorator(fun):
         _PRIOR_REGISTRY[type_p] = fun
@@ -44,6 +50,7 @@ def register_prior_parameterization(type_p):
         return fun
 
     return decorator
+
 
 def register_conditional_parameterization(type_p):
     """
@@ -57,12 +64,14 @@ def register_conditional_parameterization(type_p):
 
     Lookup returns the most specific (type). If
     the match is ambiguous, a `RuntimeWarning` is raised.
-    
+
     Args:
         type_p (type): A subclass of :class:`~torch.distributions.Distribution`.
     """
     if not isinstance(type_p, type) and issubclass(type_p, Distribution):
-        raise TypeError('Expected type_p to be a Distribution subclass but got {}'.format(type_p))
+        raise TypeError(
+            "Expected type_p to be a Distribution subclass but got {}".format(type_p)
+        )
 
     def decorator(fun):
         _CONDITIONAL_REGISTRY[type_p] = fun
@@ -74,7 +83,7 @@ def register_conditional_parameterization(type_p):
 
 @total_ordering
 class _Match(object):
-    __slots__ = ['types']
+    __slots__ = ["types"]
 
     def __init__(self, *types):
         self.types = types
@@ -111,17 +120,19 @@ def _dispatch_conditional(type_p):
     return fun
 
 
-def parameterize_prior(type_p, batch_shape, event_shape, params: list, device, dtype=torch.float32) -> Distribution:
+def parameterize_prior(
+    type_p, batch_shape, event_shape, params: list, device, dtype=torch.float32
+) -> Distribution:
     r"""
-    Parameterizes a distribution of a given type.    
+    Parameterizes a distribution of a given type.
 
     Args:
-        type_p (type): 
-        inputs (Tensor): 
+        type_p (type):
+        inputs (Tensor):
         event_size (int):
 
     Returns:
-        Tensor: an instance of type_p 
+        Tensor: an instance of type_p
 
     Raises:
         NotImplementedError: If the distribution types have not been registered via
@@ -133,7 +144,9 @@ def parameterize_prior(type_p, batch_shape, event_shape, params: list, device, d
         fun = _dispatch_prior(type_p)
         _PRIOR_MEMOIZE[type_p] = fun
     if fun is NotImplemented:
-        raise NotImplementedError("I cannot find a parameterization for a prior of type %s" % type_p )
+        raise NotImplementedError(
+            "I cannot find a parameterization for a prior of type %s" % type_p
+        )
     if isinstance(batch_shape, int):
         batch_shape = [batch_shape]
     if isinstance(event_shape, int):
@@ -143,15 +156,15 @@ def parameterize_prior(type_p, batch_shape, event_shape, params: list, device, d
 
 def parameterize_conditional(type_p, inputs, event_size) -> Distribution:
     r"""
-    Parameterizes a distribution of a given type.    
+    Parameterizes a distribution of a given type.
 
     Args:
-        type_p (type): 
-        inputs (Tensor): 
+        type_p (type):
+        inputs (Tensor):
         event_size (int):
 
     Returns:
-        Tensor: an instance of type_p 
+        Tensor: an instance of type_p
 
     Raises:
         NotImplementedError: If the distribution types have not been registered via
@@ -163,38 +176,51 @@ def parameterize_conditional(type_p, inputs, event_size) -> Distribution:
         fun = _dispatch_conditional(type_p)
         _CONDITIONAL_MEMOIZE[type_p] = fun
     if fun is NotImplemented:
-        raise NotImplementedError("I cannot find a parameterization for a conditional of type %s" % type_p )
+        raise NotImplementedError(
+            "I cannot find a parameterization for a conditional of type %s" % type_p
+        )
     return fun(inputs, event_size)
-                
 
-# Let's register a few basic parameterization of priors and conditionals    
 
-    
+# Let's register a few basic parameterization of priors and conditionals
+
+
 @register_prior_parameterization(Bernoulli)
 def parameterize(batch_shape, event_shape, params, device, dtype):
-    return Bernoulli(probs=torch.full(batch_shape + event_shape, params[0], device=device, dtype=dtype))
+    return Bernoulli(
+        probs=torch.full(
+            batch_shape + event_shape, params[0], device=device, dtype=dtype
+        )
+    )
 
 
 @register_prior_parameterization(Normal)
 def parameterize(batch_shape, event_shape, params, device, dtype):
     p = Normal(
-        loc=torch.full(batch_shape + event_shape, params[0], device=device, dtype=dtype),
-        scale=torch.full(batch_shape + event_shape, params[1], device=device, dtype=dtype),
+        loc=torch.full(
+            batch_shape + event_shape, params[0], device=device, dtype=dtype
+        ),
+        scale=torch.full(
+            batch_shape + event_shape, params[1], device=device, dtype=dtype
+        ),
     )
     return p
 
 
 @register_conditional_parameterization(Bernoulli)
 def make_bernoulli(inputs, event_size):
-    assert inputs.size(-1) == event_size, "Expected [...,%d] got [...,%d]" % (event_size, inputs.size(-1))
+    assert inputs.size(-1) == event_size, "Expected [...,%d] got [...,%d]" % (
+        event_size,
+        inputs.size(-1),
+    )
     return Bernoulli(logits=inputs)
 
 
 @register_conditional_parameterization(Normal)
 def make_gaussian(inputs, event_size):
-    assert inputs.size(-1) == 2 * event_size, "Expected [...,%d] got [...,%d]" % (2 * event_size, inputs.size(-1))
+    assert inputs.size(-1) == 2 * event_size, "Expected [...,%d] got [...,%d]" % (
+        2 * event_size,
+        inputs.size(-1),
+    )
     params = torch.split(inputs, event_size, -1)
-    return Normal(loc=params[0], scale=F.softplus(params[1])) 
-
-
-
+    return Normal(loc=params[0], scale=F.softplus(params[1]))

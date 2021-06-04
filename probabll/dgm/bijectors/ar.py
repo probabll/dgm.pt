@@ -1,9 +1,11 @@
-
-
-
-def ar_modules(units, hidden_layers, hidden_activation,
-               output_activation=torch.nn.Identity,
-               hidden_diagonal_zeros=False, output_diagonal_zeros=False):
+def ar_modules(
+    units,
+    hidden_layers,
+    hidden_activation,
+    output_activation=torch.nn.Identity,
+    hidden_diagonal_zeros=False,
+    output_diagonal_zeros=False,
+):
     """
     A FFNN using autoregressive linear layers.
     :param units: D
@@ -16,15 +18,23 @@ def ar_modules(units, hidden_layers, hidden_activation,
     """
     modules = []
     for _ in range(hidden_layers):
-        modules.append(AutoregressiveLinear(units, diagonal_zeros=hidden_diagonal_zeros))
+        modules.append(
+            AutoregressiveLinear(units, diagonal_zeros=hidden_diagonal_zeros)
+        )
         modules.append(hidden_activation())
     modules.append(AutoregressiveLinear(units, diagonal_zeros=output_diagonal_zeros))
     modules.append(output_activation())
     return modules
 
 
-def ff_modules(input_size, output_size, hidden_size, hidden_layers, hidden_activation,
-               output_activation=torch.nn.Identity):
+def ff_modules(
+    input_size,
+    output_size,
+    hidden_size,
+    hidden_layers,
+    hidden_activation,
+    output_activation=torch.nn.Identity,
+):
     """
     A FFNN.
     :param input_size:
@@ -44,5 +54,3 @@ def ff_modules(input_size, output_size, hidden_size, hidden_layers, hidden_activ
     modules.append(nn.Linear(units, output_size))
     modules.append(output_activation())
     return modules
-
-

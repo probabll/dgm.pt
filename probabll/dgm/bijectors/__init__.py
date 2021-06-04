@@ -1,13 +1,18 @@
-from .bijection import Bijection, SigmoidTransformer, InverseSigmoidTransformer, FlipUnits, StackedBijections
+from .bijection import (
+    Bijection,
+    FlipUnits,
+    InverseSigmoidTransformer,
+    SigmoidTransformer,
+    StackedBijections,
+)
 from .kingma import KingmaGating, KingmaGating2
-
 
 __all__ = [
     "Bijection",
     "SigmoidTransformer",
     "InverseSigmoidTransformer",
     "FlipUnits",
-    "StackedBijections", 
+    "StackedBijections",
     "KingmaGating",
-    "KingmaGating2"
+    "KingmaGating2",
 ]
